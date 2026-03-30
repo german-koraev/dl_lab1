@@ -10,22 +10,20 @@ class Attention(nn.Module):
         self.v = nn.Linear(dec_hid_dim, 1, bias=False)
         
     def forward(self, hidden, encoder_outputs):
-        # hidden = [batch size, dec hid dim]
-        # encoder_outputs =[src len, batch size, enc hid dim * 2]
+        
         batch_size = encoder_outputs.shape[1]
         src_len = encoder_outputs.shape[0]
         
-        # Используем expand вместо repeat, чтобы не дублировать данные в памяти (защита от OOM)
-        # [batch size, src len, dec hid dim]
+        
         hidden = hidden.unsqueeze(1).expand(-1, src_len, -1)
         
-        #[batch size, src len, enc hid dim * 2]
+        
         encoder_outputs = encoder_outputs.permute(1, 0, 2)
         
-        # [batch size, src len, dec hid dim]
+        
         energy = torch.tanh(self.attn(torch.cat((hidden, encoder_outputs), dim=2))) 
         
-        # [batch size, src len]
+        
         attention = self.v(energy).squeeze(2)
         
         return F.softmax(attention, dim=1)
@@ -35,19 +33,18 @@ class Encoder(nn.Module):
     def __init__(self, input_dim, emb_dim, enc_hid_dim, dec_hid_dim, dropout):
         super().__init__()
         self.embedding = nn.Embedding(input_dim, emb_dim)
-        # Делаем сеть двунаправленной
+        
         self.rnn = nn.GRU(emb_dim, enc_hid_dim, bidirectional=True)
         self.fc = nn.Linear(enc_hid_dim * 2, dec_hid_dim)
         self.dropout = nn.Dropout(dropout)
         
     def forward(self, src):
-        # src = [src len, batch size]
+        
         embedded = self.dropout(self.embedding(src))
         
         outputs, hidden = self.rnn(embedded)
         
-        # Склеиваем последнее скрытое состояние направлений "вперед" и "назад"
-        # hidden =[batch size, dec hid dim]
+        
         hidden = torch.tanh(self.fc(torch.cat((hidden[-2,:,:], hidden[-1,:,:]), dim=1)))
         
         return outputs, hidden
@@ -64,19 +61,19 @@ class Decoder(nn.Module):
         self.dropout = nn.Dropout(dropout)
         
     def forward(self, input, hidden, encoder_outputs):
-        # input = [batch size]
-        input = input.unsqueeze(0) #[1, batch size]
-        embedded = self.dropout(self.embedding(input)) #[1, batch size, emb dim]
         
-        # 1. Считаем веса внимания
-        a = self.attention(hidden, encoder_outputs) # [batch size, src len]
+        input = input.unsqueeze(0) #[1, batch size]
+        embedded = self.dropout(self.embedding(input)) 
+        
+       
+        a = self.attention(hidden, encoder_outputs) 
         a = a.unsqueeze(1) #[batch size, 1, src len]
         
-        encoder_outputs = encoder_outputs.permute(1, 0, 2) #[batch size, src len, enc hid dim * 2]
+        encoder_outputs = encoder_outputs.permute(1, 0, 2) 
         
-        # 2. Считаем вектор контекста (взвешенная сумма)
-        c = torch.bmm(a, encoder_outputs) #[batch size, 1, enc hid dim * 2]
-        c = c.permute(1, 0, 2) #[1, batch size, enc hid dim * 2]
+        
+        c = torch.bmm(a, encoder_outputs) 
+        c = c.permute(1, 0, 2) 
         
         rnn_input = torch.cat((embedded, c), dim=2)
         output, hidden = self.rnn(rnn_input, hidden.unsqueeze(0))
